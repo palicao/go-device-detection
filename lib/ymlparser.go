@@ -9,30 +9,22 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// DetectionRegex contains all the parsed data from the yml file
-type DetectionRegex struct {
+// OssData is needed for operating systems detection
+type OssData struct {
 	Regex    string
 	Compiled *regexp.Regexp
 	Name     string
 	Version  string
+}
+
+// BotsData is needed for bot detection
+type BotsData struct {
+	Regex    string
+	Compiled *regexp.Regexp
+	Name     string
 	Category string
-	Type     string
 	Url      string
-	Engine   EngineData
 	Producer ProducerData
-	Model    string
-	Models   []ModelDetection
-}
-
-type ModelDetection struct {
-	Regex string
-	Model string
-}
-
-// EngineData is a part of the regex representing the engine information
-type EngineData struct {
-	Default  string
-	Versions map[string]string
 }
 
 // ProducerData is part of the regex representing bot producer data
@@ -41,10 +33,41 @@ type ProducerData struct {
 	Url  string
 }
 
+// ClientData is for browsers and other clients detection
+type ClientData struct {
+	Regex    string
+	Compiled *regexp.Regexp
+	Name     string
+	Version  string
+	Type     string
+	Engine   EngineData
+}
+
+// EngineData is a part of the regex representing the engine information (for browsers)
+type EngineData struct {
+	Default  string
+	Versions map[string]string
+}
+
+// DeviceData is needed for device detection
+type DeviceData struct {
+	Regex    string
+	Compiled *regexp.Regexp
+	Model  string
+	Models []ModelData
+	Device string
+}
+
+// ModelData is part of DeviceData
+type ModelData struct {
+	Regex string
+	Model string
+}
+
 // ParseYml parses a given YML file to an array of BrowserRegex
-func ParseYml(file string) []DetectionRegex {
+func ParseYml(file string) []ClientData {
 	content := getFileContent(file)
-	regexps := make([]DetectionRegex, 0)
+	regexps := make([]ClientData, 0)
 	err := yaml.Unmarshal(content, &regexps)
 	if err != nil {
 		panic(fmt.Sprintf("Error while parsing yaml: %s", err.Error()))
@@ -56,7 +79,7 @@ func ParseYml(file string) []DetectionRegex {
 	return regexps
 }
 
-func InjectType(clientRegexes []DetectionRegex, t string) []DetectionRegex {
+func InjectType(clientRegexes []ClientData, t string) []ClientData {
 	for i := 0; i < len(clientRegexes); i++ {
 		clientRegexes[i].Type = t
 	}

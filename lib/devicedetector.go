@@ -2,6 +2,7 @@ package lib
 
 import (
 	"errors"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -9,9 +10,10 @@ import (
 var ossRegexps = ParseYml("./piwik/regexes/oss.yml")
 var botsRegexps = ParseYml("./piwik/regexes/bots.yml")
 var clientRegexps = buildClientRegexps()
-//var deviceRegexps = buildDeviceRegexps()
+var tvRegexps = ParseYml("./piwik/regexes/device/televisions.yml")
+var deviceRegexps = buildDeviceRegexps()
 
-func buildClientRegexps() []DetectionRegex {
+func buildClientRegexps() []ClientData {
 	var feedReader = ParseYml("./piwik/regexes/client/feed_readers.yml")
 	var mobileApps = InjectType(ParseYml("./piwik/regexes/client/mobile_apps.yml"), "Mobile App")
 	var mediaPlayers = InjectType(ParseYml("./piwik/regexes/client/mediaplayers.yml"), "Mediaplayer")
@@ -19,7 +21,7 @@ func buildClientRegexps() []DetectionRegex {
 	var browsers = InjectType(ParseYml("./piwik/regexes/client/browsers.yml"), "Browser")
 	var libraries = InjectType(ParseYml("./piwik/regexes/client/libraries.yml"), "Library")
 
-	total := make([]DetectionRegex, 0)
+	total := make([]ClientData, 0)
 
 	total = append(total, feedReader...)
 	total = append(total, mobileApps...)
@@ -27,6 +29,24 @@ func buildClientRegexps() []DetectionRegex {
 	total = append(total, pim...)
 	total = append(total, browsers...)
 	total = append(total, libraries...)
+
+	return total
+}
+
+func buildDeviceRegexps() []ClientData {
+	var consoles = ParseYml("./piwik/regexes/device/consoles.yml")
+	var carBrowsers = ParseYml("./piwik/regexes/device/car_browsers.yml")
+	var cameras = ParseYml("./piwik/regexes/device/cameras.yml")
+	var portableMediaPlayer = ParseYml("./piwik/regexes/device/portable_media_player.yml")
+	var mobiles = ParseYml("./piwik/regexes/device/mobiles.yml")
+
+	total := make([]ClientData, 0)
+
+	total = append(total, consoles...)
+	total = append(total, carBrowsers...)
+	total = append(total, cameras...)
+	total = append(total, portableMediaPlayer...)
+	total = append(total, mobiles...)
 
 	return total
 }
@@ -172,6 +192,29 @@ func detectClient(ua string) (ClientInfo, error) {
 		}
 	}
 	return clientInfo, errors.New("Unknown client")
+}
+
+func detectDevice(ua string) (DeviceInfo, error) {
+	hbbRegex := regexp.MustCompile("HbbTV/([1-9]{1}(?:\\.[0-9]{1}){1,2})")
+	isHbb := hbbRegex.MatchString(ua)
+	if isHbb {
+		return detectDeviceBetween(ua, tvRegexps)
+	}
+	return detectDeviceBetween(ua, deviceRegexps)
+}
+
+func detectDeviceBetween(ua string, r []ClientData) (DeviceInfo, error) {
+	deviceInfo := DeviceInfo{}
+	for _, device := range r {
+		found := device.Compiled.FindStringSubmatch(ua)
+		if len(found) > 0 {
+			deviceInfo.Type = device.Device
+			deviceInfo.Model = device.Model
+			deviceInfo.Name = device.Name
+			return deviceInfo, nil
+		}
+	}
+	return deviceInfo, errors.New("Unable to detect device")
 }
 
 func parseVersion(matcher string, version []string) string {
