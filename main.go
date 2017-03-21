@@ -20,7 +20,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 	ua := r.UserAgent()
 	parsed, _ := lib.Detect(ua)
-	fmt.Fprintf(w, "%+v\n", parsed)
+	fmt.Fprintf(w, "%#v\n", parsed)
 
 	elapsed := time.Since(start)
 	fmt.Fprintf(w, "Detection took %s\n", elapsed)

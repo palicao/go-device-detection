@@ -53,9 +53,9 @@ type EngineData struct {
 type DeviceData struct {
 	Regex    string
 	Compiled *regexp.Regexp
-	Model  string
-	Models []ModelData
-	Device string
+	Model    string
+	Models   []ModelData
+	Device   string
 }
 
 // ModelData is part of DeviceData
@@ -64,26 +64,90 @@ type ModelData struct {
 	Model string
 }
 
-// ParseYml parses a given YML file to an array of BrowserRegex
-func ParseYml(file string) []ClientData {
+// ParseClients parses a given YML file to an array of OssData
+func ParseOss(file string) []OssData {
 	content := getFileContent(file)
-	regexps := make([]ClientData, 0)
-	err := yaml.Unmarshal(content, &regexps)
+	ossData := make([]OssData, 0)
+	err := yaml.Unmarshal(content, &ossData)
 	if err != nil {
 		panic(fmt.Sprintf("Error while parsing yaml: %s", err.Error()))
 	}
-	for i, r := range regexps {
+	for i, r := range ossData {
 		reg := rewriteRegexp(r.Regex)
-		regexps[i].Compiled = regexp.MustCompile(reg)
+		ossData[i].Compiled = regexp.MustCompile(reg)
 	}
-	return regexps
+	return ossData
 }
 
-func InjectType(clientRegexes []ClientData, t string) []ClientData {
-	for i := 0; i < len(clientRegexes); i++ {
-		clientRegexes[i].Type = t
+// ParseClients parses a given YML file to an array of BotsData
+func ParseBots(file string) []BotsData {
+	content := getFileContent(file)
+	botsData := make([]BotsData, 0)
+	err := yaml.Unmarshal(content, &botsData)
+	if err != nil {
+		panic(fmt.Sprintf("Error while parsing yaml: %s", err.Error()))
 	}
-	return clientRegexes
+	for i, r := range botsData {
+		reg := rewriteRegexp(r.Regex)
+		botsData[i].Compiled = regexp.MustCompile(reg)
+	}
+	return botsData
+}
+
+// ParseClients parses a given YML file to an array of ClientData and injects a type if it's not found in the yaml
+func ParseClients(file, injectedType string) []ClientData {
+	content := getFileContent(file)
+	clientData := make([]ClientData, 0)
+	err := yaml.Unmarshal(content, &clientData)
+	if err != nil {
+		panic(fmt.Sprintf("Error while parsing yaml: %s", err.Error()))
+	}
+	for i, r := range clientData {
+		reg := rewriteRegexp(r.Regex)
+		clientData[i].Compiled = regexp.MustCompile(reg)
+		if clientData[i].Type == "" {
+			clientData[i].Type = injectedType
+		}
+	}
+	return clientData
+}
+
+// ParseMultipleClient parses multiple client files assigning a type if not found in the yaml
+func ParseMultipleClients(files map[string]string) []ClientData {
+	clientData := make([]ClientData, 0)
+	for file, injectedType := range files {
+		clientData = append(clientData, ParseClients(file, injectedType)...)
+	}
+	return clientData
+}
+
+// ParseClients parses a given YML file to an array of DeviceData
+func ParseDevice(file string) map[string]DeviceData {
+	content := getFileContent(file)
+	deviceData := make(map[string]DeviceData, 0)
+	err := yaml.Unmarshal(content, &deviceData)
+	if err != nil {
+		panic(fmt.Sprintf("Error while parsing yaml: %s", err.Error()))
+	}
+	for brand, r := range deviceData {
+		reg := rewriteRegexp(r.Regex)
+		tmp := deviceData[brand]
+		tmp.Compiled = regexp.MustCompile(reg)
+		deviceData[brand] = tmp
+	}
+	return deviceData
+}
+
+// ParseClients parses multiple YML files to an array of DeviceData
+func ParseMultipleDevices(files []string) map[string]DeviceData {
+	deviceData := make(map[string]DeviceData, 0)
+	for _, file := range files {
+		parsed := ParseDevice(file)
+		for brand, data := range parsed {
+			deviceData[brand] = data
+		}
+	}
+	return deviceData
 }
 
 // remove perl-specific regexp bits

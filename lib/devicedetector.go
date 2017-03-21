@@ -2,56 +2,36 @@ package lib
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 )
 
-var ossRegexps = ParseYml("./piwik/regexes/oss.yml")
-var botsRegexps = ParseYml("./piwik/regexes/bots.yml")
-var clientRegexps = buildClientRegexps()
-var tvRegexps = ParseYml("./piwik/regexes/device/televisions.yml")
-var deviceRegexps = buildDeviceRegexps()
+var ossRegexps = ParseOss("./piwik/regexes/oss.yml")
 
-func buildClientRegexps() []ClientData {
-	var feedReader = ParseYml("./piwik/regexes/client/feed_readers.yml")
-	var mobileApps = InjectType(ParseYml("./piwik/regexes/client/mobile_apps.yml"), "Mobile App")
-	var mediaPlayers = InjectType(ParseYml("./piwik/regexes/client/mediaplayers.yml"), "Mediaplayer")
-	var pim = InjectType(ParseYml("./piwik/regexes/client/pim.yml"), "PIM")
-	var browsers = InjectType(ParseYml("./piwik/regexes/client/browsers.yml"), "Browser")
-	var libraries = InjectType(ParseYml("./piwik/regexes/client/libraries.yml"), "Library")
+var botsRegexps = ParseBots("./piwik/regexes/bots.yml")
 
-	total := make([]ClientData, 0)
+var clientRegexps = ParseMultipleClients(map[string]string{
+	"./piwik/regexes/client/feed_readers.yml": "",
+	"./piwik/regexes/client/mobile_apps.yml":  "Mobile App",
+	"./piwik/regexes/client/mediaplayers.yml": "Mediaplayer",
+	"./piwik/regexes/client/pim.yml":          "PIM",
+	"./piwik/regexes/client/browsers.yml":     "Browser",
+	"./piwik/regexes/client/libraries.yml":    "Library",
+})
 
-	total = append(total, feedReader...)
-	total = append(total, mobileApps...)
-	total = append(total, mediaPlayers...)
-	total = append(total, pim...)
-	total = append(total, browsers...)
-	total = append(total, libraries...)
+var tvRegexps = ParseDevice("./piwik/regexes/device/televisions.yml")
 
-	return total
-}
+var deviceRegexps = ParseMultipleDevices([]string{
+	"./piwik/regexes/device/consoles.yml",
+	"./piwik/regexes/device/car_browsers.yml",
+	"./piwik/regexes/device/cameras.yml",
+	"./piwik/regexes/device/portable_media_player.yml",
+	"./piwik/regexes/device/mobiles.yml",
+})
 
-func buildDeviceRegexps() []ClientData {
-	var consoles = ParseYml("./piwik/regexes/device/consoles.yml")
-	var carBrowsers = ParseYml("./piwik/regexes/device/car_browsers.yml")
-	var cameras = ParseYml("./piwik/regexes/device/cameras.yml")
-	var portableMediaPlayer = ParseYml("./piwik/regexes/device/portable_media_player.yml")
-	var mobiles = ParseYml("./piwik/regexes/device/mobiles.yml")
-
-	total := make([]ClientData, 0)
-
-	total = append(total, consoles...)
-	total = append(total, carBrowsers...)
-	total = append(total, cameras...)
-	total = append(total, portableMediaPlayer...)
-	total = append(total, mobiles...)
-
-	return total
-}
-
-type DetectedDevice interface {
+type Detected interface {
 	IsBot() bool
 	IsBrowser() bool
 	IsFeedReader() bool
@@ -61,13 +41,12 @@ type DetectedDevice interface {
 	IsMediaPlayer() bool
 }
 
-type DetectedDeviceInfo struct {
+type DetectionInfo struct {
 	UserAgent  string
 	BotInfo    BotInfo
 	OSInfo     OSInfo
 	DeviceInfo DeviceInfo
 	ClientInfo ClientInfo
-	isBot      bool
 }
 
 type OSInfo struct {
@@ -84,9 +63,8 @@ type BotInfo struct {
 }
 
 type DeviceInfo struct {
-	Name  string
-	Type  string
-	Model string
+	Device string
+	Model  string
 }
 
 type ClientInfo struct {
@@ -96,56 +74,60 @@ type ClientInfo struct {
 	Engine  string
 }
 
-func (d *DetectedDeviceInfo) IsBot() bool {
-	return d.isBot == true
+func (d *DetectionInfo) IsBot() bool {
+	return d.BotInfo.Name != ""
 }
 
-func (d *DetectedDeviceInfo) IsBrowser() bool {
+func (d *DetectionInfo) IsBrowser() bool {
 	return d.ClientInfo.Type == "Browser"
 }
 
-func (d *DetectedDeviceInfo) IsFeedReader() bool {
+func (d *DetectionInfo) IsFeedReader() bool {
 	return strings.Contains(d.ClientInfo.Type, "Feed Reader")
 }
 
-func (d *DetectedDeviceInfo) IsMobileApp() bool {
+func (d *DetectionInfo) IsMobileApp() bool {
 	return d.ClientInfo.Type == "Mobile App"
 }
 
-func (d *DetectedDeviceInfo) IsPIM() bool {
+func (d *DetectionInfo) IsPIM() bool {
 	return d.ClientInfo.Type == "PIM"
 }
 
-func (d *DetectedDeviceInfo) IsLibrary() bool {
+func (d *DetectionInfo) IsLibrary() bool {
 	return d.ClientInfo.Type == "Library"
 }
 
-func (d *DetectedDeviceInfo) IsMediaPlayer() bool {
+func (d *DetectionInfo) IsMediaPlayer() bool {
 	return d.ClientInfo.Type == "Mediaplayer"
 }
 
-func Detect(ua string) (DetectedDeviceInfo, error) {
-	device := DetectedDeviceInfo{}
-	device.UserAgent = ua
+func Detect(ua string) (DetectionInfo, error) {
+	info := DetectionInfo{}
+	info.UserAgent = ua
 
 	botInfo, err := detectBot(ua)
 	if err == nil {
-		device.isBot = true
-		device.BotInfo = botInfo
-		return device, nil
+		info.BotInfo = botInfo
+		return info, nil
 	}
 
 	osInfo, err := detectOS(ua)
 	if err == nil {
-		device.OSInfo = osInfo
+		info.OSInfo = osInfo
 	}
 
 	clientInfo, err := detectClient(ua)
 	if err == nil {
-		device.ClientInfo = clientInfo
+		info.ClientInfo = clientInfo
 	}
 
-	return device, errors.New("bah")
+	deviceInfo, err := detectDevice(ua)
+	if err == nil {
+		info.DeviceInfo = deviceInfo
+	}
+
+	return info, errors.New(fmt.Sprintf("Couldn't detect User Agent %s", ua))
 }
 
 func detectBot(ua string) (BotInfo, error) {
@@ -203,14 +185,13 @@ func detectDevice(ua string) (DeviceInfo, error) {
 	return detectDeviceBetween(ua, deviceRegexps)
 }
 
-func detectDeviceBetween(ua string, r []ClientData) (DeviceInfo, error) {
+func detectDeviceBetween(ua string, r map[string]DeviceData) (DeviceInfo, error) {
 	deviceInfo := DeviceInfo{}
 	for _, device := range r {
 		found := device.Compiled.FindStringSubmatch(ua)
 		if len(found) > 0 {
-			deviceInfo.Type = device.Device
+			deviceInfo.Device = device.Device
 			deviceInfo.Model = device.Model
-			deviceInfo.Name = device.Name
 			return deviceInfo, nil
 		}
 	}
@@ -220,7 +201,7 @@ func detectDeviceBetween(ua string, r []ClientData) (DeviceInfo, error) {
 func parseVersion(matcher string, version []string) string {
 	if matcher[0:1] == "$" {
 		part, _ := strconv.Atoi(matcher[1:])
-		return version[part]
+		return strings.Replace(version[part], "_", ".", -1)
 	}
 	return matcher
 }
